@@ -63,10 +63,10 @@ if __name__ == "__main__":
         download_file(dataset_url, compressed_file)
     else:
         log.info(
-            f"File `{compressed_file}` already exists, skipping download.")
+            f"File {compressed_file} already exists, skipping download.")
 
     if not os.path.isdir(directory):
-        log.info(f"Extracting Enron email dataset to `{directory}`...")
+        log.info(f"Extracting Enron email dataset to {directory}...")
         extract_tar_gz(compressed_file, directory)
         # Optionally remove the tar.gz file after extraction
         os.remove(compressed_file)
