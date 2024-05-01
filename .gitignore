@@ -3,6 +3,8 @@
 
 ## My Ignores ##
 /backend/dataset
+/backend/index.faiss
+/backend/file_ids.json
 
 ### NextJS ###
 # dependencies
