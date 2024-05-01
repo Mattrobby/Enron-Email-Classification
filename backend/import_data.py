@@ -8,6 +8,7 @@ import random
 import re
 import os
 import sys
+import json
 
 from dateutil import parser
 from rich import print
@@ -16,7 +17,6 @@ from rich.progress import track
 from sentence_transformers import SentenceTransformer
 
 # Setup rich handler for better logging experience
-logging.getLogger("transformers").setLevel(logging.WARNING)
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
@@ -24,6 +24,7 @@ logging.basicConfig(
     handlers=[RichHandler()]
 )
 log = logging.getLogger("rich")
+TESTING = False
 
 def detect_encoding(file_path):
     with open(file_path, 'rb') as file:
@@ -42,15 +43,6 @@ def clean_email(file_path):
         return email.body
     except Exception as e:
         log.exception(f'Error processing {file_path}: {e}')
-        return None
-
-def parse_date(date_str):
-    try:
-        # Strip off common trailing issues such as 'GMT' and 'Subject:'
-        clean_str = re.sub(r'(\sGMT)?\s*Subject:.*', '', date_str)
-        return parser.parse(clean_str)
-    except ValueError as e:
-        log.warning(f"Date parsing error: {e} for date string: {date_str}")
         return None
 
 def parse_email_list(emails):
@@ -82,7 +74,7 @@ def extract_metadata(email_text):
             if current_key:
                 value = ' '.join(buffer).strip()
                 if current_key in ['Date']:
-                    metadata[current_key] = parse_date(value)
+                    metadata[current_key] = value
                 elif current_key in ['To', 'Cc', 'Bcc']:
                     metadata[current_key] = parse_email_list(value)
                 elif current_key in ['Content-Type']:
@@ -126,7 +118,10 @@ def create_vector_db():
     d = 384  # Dimension of vectors, change based on the model used
     faiss_index = faiss.IndexFlatL2(d)  # Using IndexFlatL2 for simplicity
 
-    num_to_process = 1000
+    if TESTING == True:
+        num_to_process = 1000
+    else: 
+        num_to_process = len(email_files)
     files_to_process = random.sample(email_files, num_to_process)
 
     log.info('Adding emails to vector database')
@@ -146,6 +141,10 @@ def create_vector_db():
 
             sys.stdout = original_stdout
 
+
+    faiss.write_index(faiss_index, 'index.faiss')
+    with open('file_ids.json', 'w') as f:
+        json.dump(file_ids, f)
 
     return faiss_index, file_ids
 
