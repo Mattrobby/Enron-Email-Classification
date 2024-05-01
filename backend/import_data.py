@@ -10,11 +10,10 @@ import os
 import sys
 import json
 
-from dateutil import parser
 from rich import print
 from rich.logging import RichHandler
-from rich.progress import track
 from sentence_transformers import SentenceTransformer
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 
 # Setup rich handler for better logging experience
 logging.basicConfig(
@@ -118,29 +117,39 @@ def create_vector_db():
     d = 384  # Dimension of vectors, change based on the model used
     faiss_index = faiss.IndexFlatL2(d)  # Using IndexFlatL2 for simplicity
 
-    if TESTING == True:
+    if TESTING:
         num_to_process = 1000
-    else: 
+    else:
         num_to_process = len(email_files)
     files_to_process = random.sample(email_files, num_to_process)
 
     log.info('Adding emails to vector database')
     file_ids = {}
-    for index, file in enumerate(track(files_to_process, description='[cyan]Adding emails to vector database...')):
-        email = clean_email(file)
-        metadata = get_metadata(file)
-        metadata['File'] = file
-        file_ids[index] = metadata
+    with Progress(
+        TextColumn("[bold cyan]{task.description}", justify="right"),
+        BarColumn(bar_width=None),
+        TextColumn("[bold green]{task.completed}/{task.total}"),
+        TextColumn("[bold yellow]({task.percentage:.0f}%)"),
+        TimeRemainingColumn(),  # Estimates the time remaining
+        expand=True
+    ) as progress:
+        task = progress.add_task("[cyan]Adding emails to vector database...", total=len(files_to_process))
+        for index, file in enumerate(files_to_process):
+            email = clean_email(file)
+            metadata = get_metadata(file)
+            metadata['File'] = file
+            file_ids[index] = metadata
 
-        if email is not None:
-            original_stdout = sys.stdout
-            sys.stdout = open(os.devnull, 'w')
+            if email is not None:
+                original_stdout = sys.stdout
+                sys.stdout = open(os.devnull, 'w')
 
-            vector = model.encode([email])[0]
-            faiss_index.add(np.array([vector]))
+                vector = model.encode([email])[0]
+                faiss_index.add(np.array([vector]))
 
-            sys.stdout = original_stdout
+                sys.stdout = original_stdout
 
+            progress.update(task, advance=1)
 
     faiss.write_index(faiss_index, 'index.faiss')
     with open('file_ids.json', 'w') as f:
