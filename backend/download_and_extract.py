@@ -2,8 +2,8 @@ import os
 import requests
 import tarfile
 import logging
-from rich.progress import Progress
 from rich.logging import RichHandler
+from rich.progress import Progress
 
 # Setup rich handler for better logging experience
 logging.basicConfig(
@@ -24,7 +24,7 @@ def download_file(url: str, save_path: str) -> None:
                 response.headers.get('content-length', 0))
             with Progress() as progress:
                 task = progress.add_task(
-                    f"[green]Downloading {save_path}...", total=total_size_in_bytes)
+                    f"[cyan]Downloading {save_path}...", total=total_size_in_bytes)
                 with open(save_path, 'wb') as file:
                     for chunk in response.iter_content(chunk_size=8192):
                         file.write(chunk)
