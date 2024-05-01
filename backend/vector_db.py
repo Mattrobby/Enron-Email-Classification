@@ -25,9 +25,10 @@ class faiss_database():
         pass
 
     def display_clusters(self, clustered_emails):
-        # Print or process clustered emails
+        clusters = ''
         for cluster_id, emails in clustered_emails.items():
-            log.info(f"Cluster {cluster_id+1}: {len(emails)} emails")
+            clusters += f"Cluster {cluster_id+1}: {len(emails)} emails"
+        log.info(clusters)
 
     def cluster(self, num_clusters=10):
         # Step 1: Extract vectors from the FAISS index
