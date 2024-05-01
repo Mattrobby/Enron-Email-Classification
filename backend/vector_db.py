@@ -11,9 +11,12 @@ logging.basicConfig(
 )
 
 class database():
-    def __init__(faiss_index_path, file_ids_path):
+    def __init__(self, faiss_index_path, file_ids_path):
         self.file_ids = json.load(open('file_ids.json', 'r'))
         self.faiss_index = faiss.read_index('index.faiss')
+
+    def cluster(self): 
+        pass
 
 
 log = logging.getLogger("rich")
