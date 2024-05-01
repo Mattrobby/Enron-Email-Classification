@@ -23,7 +23,6 @@ logging.basicConfig(
     handlers=[RichHandler()]
 )
 log = logging.getLogger("rich")
-TESTING = False
 
 def detect_encoding(file_path):
     with open(file_path, 'rb') as file:
@@ -39,10 +38,10 @@ def clean_email(file_path):
             email_text = file.read()
         email_text = email_text.replace('\\', '\\\\')
         email = mailparser.parse_from_string(email_text)
-        return email.body
+        return email.body, email_text
     except Exception as e:
         log.exception(f'Error processing {file_path}: {e}')
-        return None
+        return None, None
 
 def parse_email_list(emails):
     if emails:
@@ -117,10 +116,7 @@ def create_vector_db():
     d = 384  # Dimension of vectors, change based on the model used
     faiss_index = faiss.IndexFlatL2(d)  # Using IndexFlatL2 for simplicity
 
-    if TESTING:
-        num_to_process = 1000
-    else:
-        num_to_process = len(email_files)
+    num_to_process = 100000
     files_to_process = random.sample(email_files, num_to_process)
 
     log.info('Adding emails to vector database')
@@ -135,16 +131,18 @@ def create_vector_db():
     ) as progress:
         task = progress.add_task("[cyan]Adding emails to vector database...", total=len(files_to_process))
         for index, file in enumerate(files_to_process):
-            email = clean_email(file)
+            email_body, email_text = clean_email(file)
             metadata = get_metadata(file)
             metadata['File'] = file
+            metadata['Email Body'] = email_body
+            metadata['Email Text'] = email_text
             file_ids[index] = metadata
 
-            if email is not None:
+            if email_body is not None:
                 original_stdout = sys.stdout
                 sys.stdout = open(os.devnull, 'w')
 
-                vector = model.encode([email])[0]
+                vector = model.encode([email_body])[0]
                 faiss_index.add(np.array([vector]))
 
                 sys.stdout = original_stdout
