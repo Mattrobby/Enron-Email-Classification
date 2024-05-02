@@ -116,7 +116,7 @@ def create_vector_db():
     d = 384  # Dimension of vectors, change based on the model used
     faiss_index = faiss.IndexFlatL2(d)  # Using IndexFlatL2 for simplicity
 
-    num_to_process = len(email_files)
+    num_to_process = 1000
     files_to_process = random.sample(email_files, num_to_process)
 
     log.info('Adding emails to vector database')

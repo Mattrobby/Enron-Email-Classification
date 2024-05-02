@@ -34,15 +34,36 @@ class faiss_database():
                 api_key=OPEN_AI_APIKEY, # required, but unused
         )
 
-
-    def set_cluster_catagory(self, clusetered_emails):
-        pass
-
-    def display_clusters(self, clustered_emails):
+    def display_clusters(self, clustered_emails, cluster_descriptions):
         clusters = ''
         for cluster_id, emails in clustered_emails.items():
-            clusters += f"Cluster {cluster_id+1}: {len(emails)} emails\n"
+            clusters += f'Cluster {cluster_id+1}: "{cluster_descriptions[cluster_id]}"\t({len(emails)} emails)\n'
         log.info(clusters)
+
+    def generate_category_descriptions(self, clustered_emails, sample_size=30):
+        cluster_descriptions = {}
+        system_message = "Identify a single-word theme for the list of emails. Respond only with the category, do not include explanations"
+        for cluster_id, emails in clustered_emails.items():
+            sample_emails = random.sample(emails, min(sample_size, len(emails)))
+            combined_text = " ".join([email['Email Body'] for email in sample_emails if email['Email Body']])
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"{combined_text}\n"}
+            ]
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=8,
+                temperature=0.5,
+                top_p=0.5,
+            )
+
+            description = response.choices[0].message.content.strip()
+            cluster_descriptions[cluster_id] = description
+            for email in emails:
+                email['Cluster Description'] = description
+
+        return clustered_emails, cluster_descriptions
 
     def cluster(self, num_clusters=10):
         # Step 1: Extract vectors from the FAISS index
@@ -61,33 +82,14 @@ class faiss_database():
         for idx, cluster_id in enumerate(track(clusters, description='[cyan]Clustering emails...')):
             email_info = self.file_ids[str(idx)]  # Ensure the keys are aligned with indices
             clustered_emails[cluster_id].append(email_info)
-        return clustered_emails
 
-    def generate_category_descriptions(self, clustered_emails, sample_size=30):
-        descriptions = {}
-        for cluster_id, emails in clustered_emails.items():
-            sample_emails = random.sample(emails, min(sample_size, len(emails)))
-            combined_text = " ".join([email['Email Body'] for email in sample_emails if email['Email Body']])
-            messages = [
-                {"role": "system", "content": "Identify a single-word theme for the list of emails. Respond only with the category, do not include explanations"},
-                {"role": "user", "content": f"{combined_text}\n"}
-            ]
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=8,
-                temperature=0.5,
-                top_p=0.5,
-            )
-            descriptions[cluster_id] = response.choices[0].message.content
-        return descriptions
+        # Step 4: Catagorize Clusters
+        clustered_emails, clustered_descriptions = self.generate_category_descriptions(clustered_emails)
+        self.display_clusters(clustered_emails, clustered_descriptions)
+        
+        return clustered_emails, clustered_descriptions
 
 log = logging.getLogger("rich")
 if __name__ == "__main__":
     vector_db = faiss_database('index.faiss', 'file_ids.json')
-    cluster = vector_db.cluster(num_clusters=30)
-
-    descriptions = vector_db.generate_category_descriptions(cluster, )
-    print(descriptions)
-    vector_db.display_clusters(cluster)
-
+    cluster = vector_db.cluster(num_clusters=5)
