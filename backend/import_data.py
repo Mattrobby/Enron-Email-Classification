@@ -121,6 +121,8 @@ def create_vector_db():
 
     log.info('Adding emails to vector database')
     file_ids = {}
+    sent_emails = {}
+    received_emails = {}
     with Progress(
         TextColumn("[bold cyan]{task.description}", justify="right"),
         BarColumn(bar_width=None),
