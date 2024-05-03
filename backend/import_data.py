@@ -162,6 +162,9 @@ def create_vector_db():
     conn = setup_database()
 
     log.info('Adding emails to vector database')
+    vector_batch = []
+    batch_size = 100  # Define a suitable batch size
+
     with Progress(
         TextColumn("[bold cyan]{task.description}", justify="right"),
         BarColumn(bar_width=None),
@@ -181,15 +184,17 @@ def create_vector_db():
             insert_metadata(conn, metadata, index)
 
             if email_body is not None:
-                original_stdout = sys.stdout
-                sys.stdout = open(os.devnull, 'w')
-
                 vector = model.encode([email_body])[0]
-                faiss_index.add(np.array([vector], dtype='float32'))
+                vector_batch.append(vector)
 
-                sys.stdout = original_stdout
+                if len(vector_batch) >= batch_size:
+                    faiss_index.add(np.array(vector_batch))
+                    vector_batch = []  # Reset batch after adding to the index
 
             progress.update(task, advance=1)
+
+        if vector_batch:
+            faiss_index.add(np.array(vector_batch))  # Add remaining vectors
 
     faiss.write_index(faiss_index, 'index.faiss')
     conn.close()
