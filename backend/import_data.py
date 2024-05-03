@@ -162,8 +162,9 @@ def create_vector_db():
     conn = setup_database()
 
     log.info('Adding emails to vector database')
-    vector_batch = []
-    batch_size = 100  # Define a suitable batch size
+    email_body_batch = []
+    metadata_batch = []
+    batch_size = 100  # Define a suitable batch size for encoding
 
     with Progress(
         TextColumn("[bold cyan]{task.description}", justify="right"),
@@ -176,25 +177,29 @@ def create_vector_db():
         task = progress.add_task("[cyan]Adding emails to vector database...", total=len(files_to_process))
         for index, file in enumerate(files_to_process):
             email_body, email_text = clean_email(file)
-            metadata = get_metadata(file)
-            metadata['File'] = file
-            metadata['Email Body'] = email_body
-            metadata['Email Text'] = email_text
+            if email_body:
+                email_body_batch.append(email_body)
+                metadata = get_metadata(file)
+                metadata['File'] = file
+                metadata['Email Body'] = email_body
+                metadata['Email Text'] = email_text
+                metadata_batch.append((metadata, index))
 
-            insert_metadata(conn, metadata, index)
-
-            if email_body is not None:
-                vector = model.encode([email_body])[0]
-                vector_batch.append(vector)
-
-                if len(vector_batch) >= batch_size:
-                    faiss_index.add(np.array(vector_batch))
-                    vector_batch = []  # Reset batch after adding to the index
+            if len(email_body_batch) >= batch_size:
+                vectors = model.encode(email_body_batch)
+                for vec, (meta, idx) in zip(vectors, metadata_batch):
+                    faiss_index.add(np.array([vec]))
+                    insert_metadata(conn, meta, idx)
+                email_body_batch = []
+                metadata_batch = []
 
             progress.update(task, advance=1)
 
-        if vector_batch:
-            faiss_index.add(np.array(vector_batch))  # Add remaining vectors
+        if email_body_batch:
+            vectors = model.encode(email_body_batch)
+            for vec, (meta, idx) in zip(vectors, metadata_batch):
+                faiss_index.add(np.array([vec]))
+                insert_metadata(conn, meta, idx)
 
     faiss.write_index(faiss_index, 'index.faiss')
     conn.close()
