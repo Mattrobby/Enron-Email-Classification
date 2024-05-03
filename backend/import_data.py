@@ -4,16 +4,18 @@ import glob
 import logging
 import mailparser
 import numpy as np
+import os
 import random
 import re
-import os
-import sys
 import sqlite3
+import sys
+import threading
 
 from rich import print
 from rich.logging import RichHandler
-from sentence_transformers import SentenceTransformer
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from sentence_transformers import SentenceTransformer
+from threading import Lock
 
 # Setup rich handler for better logging experience
 logging.basicConfig(
@@ -105,7 +107,7 @@ def get_metadata(file_path):
         return None
 
 def setup_database():
-    conn = sqlite3.connect('emails.db')
+    conn = sqlite3.connect('emails.db', check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS emails (
@@ -131,50 +133,79 @@ def setup_database():
     conn.commit()
     return conn
 
-def insert_metadata(conn, metadata, email_index):
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO emails (
-            file, message_id, date, from_email, to_emails, subject, mime_version, content_type,
-            content_transfer_encoding, x_from, x_to, x_folder, x_origin, email_body, email_text, email_index
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        metadata.get('File'), metadata.get('Message-ID'), metadata.get('Date'), metadata.get('From'),
-        ','.join(metadata.get('To', [])), metadata.get('Subject'), metadata.get('Mime-Version'),
-        metadata.get('Content-Type', {}).get('type'), metadata.get('Content-Transfer-Encoding'),
-        metadata.get('X-From'), metadata.get('X-To'), metadata.get('X-Folder'), metadata.get('X-Origin'),
-        metadata.get('Email Body'), metadata.get('Email Text'), email_index
-    ))
-    conn.commit()
+def insert_metadata(conn, metadata, email_index, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO emails (
+                    file, message_id, date, from_email, to_emails, subject, mime_version, content_type,
+                    content_transfer_encoding, x_from, x_to, x_folder, x_origin, email_body, email_text, email_index
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                metadata.get('File'), metadata.get('Message-ID'), metadata.get('Date'), metadata.get('From'),
+                ','.join(metadata.get('To', [])), metadata.get('Subject'), metadata.get('Mime-Version'),
+                metadata.get('Content-Type', {}).get('type'), metadata.get('Content-Transfer-Encoding'),
+                metadata.get('X-From'), metadata.get('X-To'), metadata.get('X-Folder'), metadata.get('X-Origin'),
+                metadata.get('Email Body'), metadata.get('Email Text'), email_index
+            ))
+            conn.commit()
+            cursor.close()
+            break  # Exit the loop if commit is successful
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed with error: {e}")
+            conn.rollback()
+            cursor.close()
+            if attempt == max_retries - 1:
+                print("Max retries reached, failed to insert metadata.")
+
+def process_email_batch(email_body_batch, metadata_batch, faiss_index, db_path, model, progress):
+    conn = sqlite3.connect(db_path, check_same_thread=False)  # Each thread gets its own connection
+    task = progress.add_task("[red]Adding emails to vector database...", total=len(email_body_batch))
+    try:
+        index_lock = Lock()
+        vectors = model.encode(email_body_batch)
+        for vec, (meta, idx) in zip(vectors, metadata_batch):
+            faiss_index.add(np.array([vec]))
+            with index_lock:
+                insert_metadata(conn, meta, idx)
+            progress.update(task, advance=1)
+    finally:
+        conn.close()
 
 def create_vector_db():
     log.info('Compiling email files')
-    email_files = list(glob.glob('./dataset/maildir/**/*.', recursive=True))
     model = SentenceTransformer('all-MiniLM-L6-v2')
+    email_files = list(glob.glob('./dataset/maildir/**/*.', recursive=True))
 
     log.info('Initialize a FAISS index')
     d = 384
     faiss_index = faiss.IndexFlatL2(d)
 
-    num_to_process = 1000
+    num_to_process = len(email_files)
+    # num_to_process = 50000
     files_to_process = random.sample(email_files, num_to_process)
 
-    conn = setup_database()
+    db_path = 'emails.db'  # Specify the database path
+    setup_database()  # Ensure the database is set up before spawning threads
 
     log.info('Adding emails to vector database')
     email_body_batch = []
     metadata_batch = []
-    batch_size = 100  # Define a suitable batch size for encoding
+    batch_size = 50000
+    threads = []
 
     with Progress(
-        TextColumn("[bold cyan]{task.description}", justify="right"),
+        TextColumn("[bold cyan]{task.description}", justify="left"),
         BarColumn(bar_width=None),
         TextColumn("[bold green]{task.completed}/{task.total}"),
         TextColumn("[bold yellow]({task.percentage:.0f}%)"),
         TimeRemainingColumn(),
-        expand=True
+        expand=True,
+        transient=True
     ) as progress:
-        task = progress.add_task("[cyan]Adding emails to vector database...", total=len(files_to_process))
+        task = progress.add_task("[cyan]Gathering email content...", total=len(files_to_process))
+
         for index, file in enumerate(files_to_process):
             email_body, email_text = clean_email(file)
             if email_body:
@@ -186,23 +217,26 @@ def create_vector_db():
                 metadata_batch.append((metadata, index))
 
             if len(email_body_batch) >= batch_size:
-                vectors = model.encode(email_body_batch)
-                for vec, (meta, idx) in zip(vectors, metadata_batch):
-                    faiss_index.add(np.array([vec]))
-                    insert_metadata(conn, meta, idx)
+                # Start a new thread to process the batch
+                thread = threading.Thread(target=process_email_batch, args=(email_body_batch.copy(), metadata_batch.copy(), faiss_index, db_path, model, progress))
+                thread.start()
+                threads.append(thread)  # Keep track of the thread
                 email_body_batch = []
                 metadata_batch = []
 
             progress.update(task, advance=1)
 
+        # Process any remaining emails after the loop
         if email_body_batch:
-            vectors = model.encode(email_body_batch)
-            for vec, (meta, idx) in zip(vectors, metadata_batch):
-                faiss_index.add(np.array([vec]))
-                insert_metadata(conn, meta, idx)
+            thread = threading.Thread(target=process_email_batch, args=(email_body_batch, metadata_batch, faiss_index, db_path, model, progress))
+            thread.start()
+            threads.append(thread)
+
+# Wait for all threads to complete
+    for thread in threads:
+        thread.join()
 
     faiss.write_index(faiss_index, 'index.faiss')
-    conn.close()
 
     return faiss_index
 
