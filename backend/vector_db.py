@@ -5,14 +5,16 @@ import random
 import logging
 import numpy as np
 import os
+import matplotlib.pyplot as plt
+import pandas as pd
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from rich import print
-from sklearn.cluster import KMeans
 from rich.logging import RichHandler
 from rich.progress import track
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 load_dotenv()
 OPEN_AI_APIKEY = os.environ.get('OPEN_AI_APIKEY')
@@ -185,10 +187,35 @@ class Database():
             columns = [column[0] for column in cursor.description]
             emails = [dict(zip(columns, row)) for row in cursor.fetchall()]
             return emails
+    
+    def chart_email_categories(self):
+        # Connect to the database and fetch categories and their count
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT category, COUNT(*) FROM emails GROUP BY category ORDER BY COUNT(*) DESC")
+            category_data = cursor.fetchall()
+
+        # Check if data is available
+        if category_data:
+            # Unpacking categories and their counts
+            categories, counts = zip(*category_data)
+
+            # Creating a bar chart
+            plt.figure(figsize=(12, 7))
+            plt.barh(categories, counts, color='purple')  # Use horizontal bar chart for better label readability
+            plt.xlabel('Number of Emails')
+            plt.ylabel('Email Category')
+            plt.title('Number of Emails by Category')
+            plt.tight_layout()
+            plt.savefig('Emails by Catagory.png')
+        else:
+            log.error("No category data available to plot.")
+
 
 
 log = logging.getLogger("rich")
 if __name__ == "__main__":
     database = Database('index.faiss', 'emails.db')
     # cluster = database.cluster(num_clusters=50)
+    database.chart_email_categories()
 
