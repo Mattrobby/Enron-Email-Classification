@@ -184,7 +184,6 @@ def process_email_batch(email_body_batch, metadata_batch, faiss_index, db_path, 
         for future in as_completed(futures):
             progress.update(task, advance=batch_size)
 
-
 def create_vector_db():
     log.info('Compiling email files')
     model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -194,8 +193,8 @@ def create_vector_db():
     d = 384
     faiss_index = faiss.IndexFlatL2(d)
 
-    num_to_process = len(email_files)
-    # num_to_process = 10000
+    # num_to_process = len(email_files)
+    num_to_process = 100000
     files_to_process = random.sample(email_files, num_to_process)
 
     db_path = 'emails.db'  # Specify the database path
@@ -205,7 +204,7 @@ def create_vector_db():
     log.info('Adding emails to vector database')
     email_body_batch = []
     metadata_batch = []
-    batch_size = 5000
+    batch_size = 10000
     threads = []
 
     with Progress(

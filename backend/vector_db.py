@@ -12,6 +12,7 @@ from rich import print
 from sklearn.cluster import KMeans
 from rich.logging import RichHandler
 from rich.progress import track
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 
 load_dotenv()
 OPEN_AI_APIKEY = os.environ.get('OPEN_AI_APIKEY')
@@ -24,7 +25,7 @@ logging.basicConfig(
     handlers=[RichHandler()]
 )
 
-class faiss_database():
+class Database():
     def __init__(self, faiss_index_path, db_path):
         self.faiss_index = faiss.read_index(faiss_index_path)
         self.db_path = db_path
@@ -50,7 +51,7 @@ class faiss_database():
         log.info(clusters)
 
     def cluster_email_sample(self, sample_emails):
-        return " ".join([email['Email Body'] for email in sample_emails if email['Email Body']])
+        return " ".join([email['Email Info']['Email Body'] for email in sample_emails if email['Email Info'].get('Email Body')])
 
     def generate_category_descriptions(self, clustered_emails, sample_size=30):
         cluster_descriptions = {}
@@ -65,7 +66,8 @@ class faiss_database():
             sample_emails = random.sample(emails, min(sample_size, len(emails)))
             combined_text = self.cluster_email_sample(sample_emails)
     
-            for _ in range(adjustment_attempts):
+            index = 0
+            while index < adjustment_attempts:
                 messages = [
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": combined_text}
@@ -78,8 +80,6 @@ class faiss_database():
                         sample_emails.pop()
                         combined_text = self.cluster_email_sample(sample_emails)
                         logging.warning(f'Reduced sample size due to token limit. New token count: {token_count}')
-                        if adjustment_attempts == 0:
-                            adjustment_attempts += 1
                     else:
                         logging.error("Minimum sample size still exceeds token limit")
                         break
@@ -88,6 +88,7 @@ class faiss_database():
                     sample_emails.append(new_sample_email)
                     combined_text = self.cluster_email_sample(sample_emails)
                     logging.info(f'Increased sample size. New token count: {token_count}')
+                    index += 1
                 else:
                     logging.info(f'Sample size is optimal. Token count: {token_count}')
                     break
@@ -103,11 +104,47 @@ class faiss_database():
             description = response.choices[0].message.content.strip()
             cluster_descriptions[cluster_id] = description
             for email in emails:
-                email['Cluster Description'] = description
+                email['Email Info']['Cluster Description'] = description
 
         return clustered_emails, cluster_descriptions
 
+    def ensure_column(self):
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(emails)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'category' not in columns:
+                cursor.execute("ALTER TABLE emails ADD COLUMN category TEXT")
+
+    def ensure_index(self):
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            # Check if the index already exists
+            cursor.execute("PRAGMA index_list('emails')")
+            indexes = cursor.fetchall()
+            if 'idx_email_index' not in [index[1] for index in indexes]:
+                # Create index if it doesn't exist
+                log.info("Creating index on email_index...")
+                cursor.execute("CREATE INDEX idx_email_index ON emails (email_index)")
+                conn.commit()
+                log.info("Index created successfully.")
+            else:
+                log.info("Index already exists.")
+
+    def update_categories(self, clustered_emails, cluster_descriptions):
+        with self.connect_db() as conn:
+            self.ensure_index()
+            cursor = conn.cursor()
+            for cluster_id, emails in clustered_emails.items():
+                category = cluster_descriptions[cluster_id]
+                for email in track(emails):
+                    email_index = email['Email Index']
+                    cursor.execute("UPDATE emails SET category = ? WHERE email_index = ?", (category, email_index))
+            conn.commit()
+
     def cluster(self, num_clusters=10):
+        self.ensure_column()
+
         # Extract vectors from the FAISS index
         log.info('Extract vectors from the FAISS index')
         vectors = np.zeros((self.faiss_index.ntotal, self.faiss_index.d), dtype='float32')
@@ -125,15 +162,33 @@ class faiss_database():
         for idx, cluster_id in enumerate(track(clusters, description='[cyan]Clustering emails...')):
             if idx in emails:  # Check if the index exists in the fetched emails
                 email_info = emails[idx]
-                clustered_emails[cluster_id].append(email_info)
+                clustered_emails[cluster_id].append({'Email Index': idx, 'Email Info': email_info})
 
         # Categorize Clusters
         clustered_emails, cluster_descriptions = self.generate_category_descriptions(clustered_emails)
         self.display_clusters(clustered_emails, cluster_descriptions)
-        
+
+        # Update Database
+        log.info('Updating database with catagories')
+        self.update_categories(clustered_emails, cluster_descriptions)
+
         return clustered_emails, cluster_descriptions
+
+    def fetch_emails_between(self, email1, email2):
+        with self.connect_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM emails
+                WHERE (from_email = ? AND to_emails LIKE ?)
+                OR (to_emails LIKE ? AND from_email = ?)
+                """, (email1, f'%{email2}%', email1, f'%{email2}%'))
+            columns = [column[0] for column in cursor.description]
+            emails = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return emails
+
 
 log = logging.getLogger("rich")
 if __name__ == "__main__":
-    vector_db = faiss_database('index.faiss', 'emails.db')
-    cluster = vector_db.cluster(num_clusters=5)
+    database = Database('index.faiss', 'emails.db')
+    # cluster = database.cluster(num_clusters=50)
+
