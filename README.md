@@ -16,7 +16,7 @@ While I was originally using json to store my data, to do the more complex opera
 
 If you do not have the dataset install please run `download_and_extract.py`. This will download the dataset for you. Once the dataset is downloaded, you can import the data into Faiss and the SQLite db by running `import_data.py`. Once data has been imported you can run `vector_db.py` to add the categorize.
 
-> [!NOTE] You will need to create a `.env` file and add an OpenAI API key:
+> [!note] You will need to create a `.env` file and add an OpenAI API key:
 > ```
 > OPENAI_API_KEY=[ENTER-KEY-HERE]
 > ```
