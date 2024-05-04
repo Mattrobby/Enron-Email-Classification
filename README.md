@@ -2,7 +2,7 @@
 
 The point of this project is to use Faiss to cluster emails and to use ChatGPT to categorize these emails. Here is an example graph based on a subset of 100,000 emails:
 
-![](./backend/Emails by Catagory.png)
+![Emails by Category](backend/Emails by Catagory.png) 
 
 ## Multithreading
 
