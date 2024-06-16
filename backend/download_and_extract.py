@@ -18,13 +18,15 @@ log = logging.getLogger("rich")
 def download_file(url: str, save_path: str) -> None:
     """Downloads a file from a specified URL and saves it to the given path with progress tracking."""
     try:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
         with requests.get(url, stream=True) as response:
             response.raise_for_status()  # Checks for request errors
             total_size_in_bytes = int(
                 response.headers.get('content-length', 0))
             with Progress() as progress:
                 task = progress.add_task(
-                    f"[cyan]Downloading {save_path}...", total=total_size_in_bytes)
+                    f"[cyan]Downloading Enron Email Dataset...", total=total_size_in_bytes)
                 with open(save_path, 'wb') as file:
                     for chunk in response.iter_content(chunk_size=8192):
                         file.write(chunk)
@@ -55,7 +57,7 @@ def extract_tar_gz(file_path: str, extract_to: str) -> None:
 
 if __name__ == "__main__":
     dataset_url: str = 'https://www.cs.cmu.edu/~enron/enron_mail_20150507.tar.gz'
-    compressed_file: str = './enron_email_dataset.tar.gz'
+    compressed_file: str = './dataset/enron_email_dataset.tar.gz'
     directory: str = './dataset/'
 
     if not os.path.exists(compressed_file):
