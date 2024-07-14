@@ -4,14 +4,11 @@ import glob
 import logging
 import mailparser
 import numpy as np
-import os
 import random
 import re
 import sqlite3
-import sys
 import threading
 
-from rich import print
 from rich.logging import RichHandler
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 from sentence_transformers import SentenceTransformer

@@ -5,6 +5,7 @@
 /backend/dataset
 /backend/index.faiss
 /backend/file_ids.json
+/.idea
 
 ### NextJS ###
 # dependencies
