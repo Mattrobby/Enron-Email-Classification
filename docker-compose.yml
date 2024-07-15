@@ -1,4 +1,5 @@
 ---
+# TODO: Add environment variables for openai api key and cuda
 services:
   weaviate:
     command:
