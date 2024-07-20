@@ -7,18 +7,19 @@ Created: 2024-07-19
 
 Changelog:
     Version 1.0.0 - 2024-07-14 - Matthew Stefanovic
-        - Added the __init__(), connect(), and close() function to the Weaviate_Client class
+        - Added the __init__(), connect(), create_collection() and close() functions to the Weaviate_Client class
         - Tested functions to make sure they work
 """
 
 """
 Methods this class needs: 
-    - [ ] Connect and disconnect to a client
-    - [ ] Create a collection based on a given schema
+    - [x] Connect and disconnect to a client
+    - [x] Create a collection based on a given schema
     - [ ] Check if a collection has been created
     - [ ] Batch adds entries to a collection
 """
 import weaviate
+import weaviate.classes as wvc
 import logging
 
 from rich.logging import RichHandler
@@ -47,8 +48,22 @@ class Weaviate_Client:
         log.info(f'Closing Weaviate client connection')
         self.client.close()
 
+    def create_collection(self, **kwargs):
+        """Creates a collection based on the specified schema"""
+        log.info(f'Creating the collection "{kwargs.get('name')}"')
+        collection = self.client.collections.create(**kwargs)
+        return collection
+
 
 if __name__ == '__main__':
     weaviate_client = Weaviate_Client()
+
     weaviate_client.connect()
+    
+    weaviate_client.create_collection(
+        name="Question",
+        vectorizer_config=wvc.config.Configure.Vectorizer.text2vec_transformers(),
+        generative_config=wvc.config.Configure.Generative.ollama()
+    )
+
     weaviate_client.close()

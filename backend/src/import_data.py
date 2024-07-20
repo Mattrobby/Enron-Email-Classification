@@ -11,8 +11,6 @@ Changelog:
     Version 1.0.1 - 2024-07-19 - Matthew Stefanovic
         - Imported code from import_data.py that didn't use Faiss
 """
-# TODO: Make this a python package
-
 import os
 import requests
 import tarfile
@@ -46,8 +44,7 @@ log = logging.getLogger("rich")
 # Download and Extract Data
 # =======================================
 
-@staticmethod
-def download_file(url: str, save_path: str):
+def download_file(url: str, save_path: str) -> None:
     """Downloads a file from a specified URL and saves it to the given path with progress tracking."""
     try:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -69,7 +66,6 @@ def download_file(url: str, save_path: str):
         raise
 
 
-@staticmethod
 def extract_tar_gz(file_path: str, extract_to: str) -> None:
     """Extracts a tar.gz file to a specified directory with progress tracking."""
     try:
@@ -89,8 +85,7 @@ def extract_tar_gz(file_path: str, extract_to: str) -> None:
 
 
 # TODO: add in a hash and logic so it checks if the file has already been downloaded and extracted
-@staticmethod
-def download_and_extract():
+def download_and_extract() -> None:
     dataset_url: str = 'https://www.cs.cmu.edu/~enron/enron_mail_20150507.tar.gz'
     compressed_file: str = './dataset/enron_email_dataset.tar.gz'
     directory: str = './dataset/'
